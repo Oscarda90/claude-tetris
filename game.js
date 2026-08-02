@@ -39,8 +39,12 @@ const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
+const themeToggle = document.getElementById('theme-toggle');
+
+const THEME_KEY = 'tetris-theme';
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
+let theme, gridColor, blockHighlightColor;
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -163,13 +167,13 @@ function drawBlock(context, x, y, colorIndex, size, alpha) {
   context.fillStyle = color;
   context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
   // highlight
-  context.fillStyle = 'rgba(255,255,255,0.12)';
+  context.fillStyle = blockHighlightColor;
   context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
   context.globalAlpha = 1;
 }
 
 function drawGrid() {
-  ctx.strokeStyle = '#22222e';
+  ctx.strokeStyle = gridColor;
   ctx.lineWidth = 0.5;
   for (let c = 1; c < COLS; c++) {
     ctx.beginPath();
@@ -216,6 +220,26 @@ function drawNext() {
   for (let r = 0; r < shape.length; r++)
     for (let c = 0; c < shape[r].length; c++)
       drawBlock(nextCtx, offX + c, offY + r, shape[r][c], NB);
+}
+
+function updateThemeColors() {
+  const style = getComputedStyle(document.body);
+  gridColor = style.getPropertyValue('--grid-color').trim();
+  blockHighlightColor = style.getPropertyValue('--block-highlight').trim();
+}
+
+function applyTheme(t, { repaint = true } = {}) {
+  theme = t;
+  document.body.classList.toggle('light', t === 'light');
+  themeToggle.textContent = t === 'light' ? '☀️' : '🌙';
+  themeToggle.setAttribute('aria-label', t === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro');
+  themeToggle.setAttribute('title', t === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro');
+  localStorage.setItem(THEME_KEY, t);
+  updateThemeColors();
+  if (repaint && current) {
+    draw();
+    drawNext();
+  }
 }
 
 function endGame() {
@@ -300,5 +324,12 @@ document.addEventListener('keydown', e => {
 });
 
 restartBtn.addEventListener('click', init);
+
+themeToggle.addEventListener('click', () => {
+  applyTheme(theme === 'light' ? 'dark' : 'light');
+});
+
+const savedTheme = localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark';
+applyTheme(savedTheme, { repaint: false });
 
 init();
