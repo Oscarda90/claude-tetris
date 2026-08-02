@@ -80,7 +80,9 @@ jobs:
                prioridad:alta, prioridad:media, prioridad:baja,
                complejidad:baja, complejidad:media, complejidad:alta.
                Si el issue es demasiado ambiguo para clasificarlo, anade tambien la label `question`.
-            4. Publica el diagnostico como comentario, EN ESPANOL, con exactamente esta estructura:
+            4. Publica el diagnostico como comentario, EN ESPANOL y en Markdown valido de GitHub
+               (GitHub Flavored Markdown), con exactamente esta estructura.
+               El bloque ``` de abajo solo delimita la plantilla: NO lo incluyas en el comentario.
 
             ```markdown
             ## 🔍 Diagnóstico automático
@@ -132,6 +134,19 @@ jobs:
             - `endGame()` llama a `cancelAnimationFrame`, pero si se dispara desde `loop` el frame actual
               termina y se re-encola: hay que guardar con `gameOver`.
             - Los textos de UI y el README estan en espanol.
+
+            ## Formato del comentario
+
+            El comentario debe renderizar correctamente en GitHub. Usa solo GitHub Flavored Markdown:
+
+            - Encabezados con `##` / `###`, negrita con `**...**`, listas con `-` y listas numeradas con `1.`.
+            - Referencias a codigo SIEMPRE en backticks: `` `game.js:123` ``, `` `collide()` ``.
+            - Fragmentos de codigo en bloques cercados con triple backtick y lenguaje (```js, ```html, ```css).
+            - Checklists con `- [ ]` (sintaxis de tareas de GitHub), un item por linea.
+            - Linea en blanco entre parrafos, listas y encabezados; sin ella GitHub los pega.
+            - Sin HTML crudo, sin tags `<details>` anidados raros, sin tablas mal cerradas.
+            - No envuelvas el comentario entero en un bloque de codigo.
+            - Escribe el cuerpo a un archivo temporal y pasalo con `--body-file` para no romper el escapado.
 
             ## Reglas
 
