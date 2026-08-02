@@ -1,0 +1,140 @@
+name: Triaje de Issues con Claude
+
+on:
+  issues:
+    types: [opened, edited]
+
+concurrency:
+  group: issue-triage-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    # No re-disparar por acciones de bots (incluido el propio Claude)
+    if: github.event.sender.type != 'Bot'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # necesario para aplicar labels y comentar
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Asegurar catálogo de labels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          crear() { gh label create "$1" --color "$2" --description "$3" --force; }
+
+          crear "tipo:bug"          "d73a4a" "Comportamiento incorrecto"
+          crear "tipo:feature"      "a2eeef" "Funcionalidad nueva"
+          crear "tipo:mejora"       "bfd4f2" "Pulido de algo existente"
+          crear "tipo:docs"         "0075ca" "README / CLAUDE.md"
+
+          crear "area:gameplay"     "fbca04" "Colision, rotacion, kicks, spawn, bloqueo"
+          crear "area:render"       "5319e7" "Canvas, drawBlock, drawNext, ghost"
+          crear "area:ui"           "c2e0c6" "HTML/CSS, marcador, botones"
+          crear "area:controles"    "d4c5f9" "Teclado, keydown"
+          crear "area:ci"           "ededed" "Workflows y .github/"
+
+          crear "prioridad:alta"    "b60205" "Bloquea el juego o su uso"
+          crear "prioridad:media"   "fbca04" "Importante pero no bloqueante"
+          crear "prioridad:baja"    "0e8a16" "Nice to have"
+
+          crear "complejidad:baja"  "0e8a16" "Cambio localizado"
+          crear "complejidad:media" "fbca04" "Varias funciones implicadas"
+          crear "complejidad:alta"  "b60205" "Cambio estructural"
+
+      - name: Analizar issue con Claude
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: >-
+            --allowed-tools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh label list:*)"
+          prompt: |
+            Eres el triador de issues del repositorio ${{ github.repository }}, un Tetris en JavaScript vanilla
+            (3 archivos: index.html, style.css, game.js — sin build, sin dependencias, sin tests).
+
+            Trabaja sobre el issue #${{ github.event.issue.number }}.
+
+            ## Procedimiento
+
+            1. Lee el issue completo:
+               `gh issue view ${{ github.event.issue.number }} --json title,body,comments,labels`
+            2. Lee `CLAUDE.md` y despues el codigo realmente relevante (`game.js`, `index.html`, `style.css`).
+               NO opines sin haber leido el codigo: cada afirmacion del diagnostico debe apoyarse en lineas concretas.
+            3. Aplica labels del catalogo con UNA sola llamada:
+               `gh issue edit ${{ github.event.issue.number }} --add-label "tipo:X,area:Y,prioridad:Z,complejidad:W"`
+               Reglas: exactamente un `tipo:*`, uno o mas `area:*`, exactamente un `prioridad:*` y un `complejidad:*`.
+               No inventes labels fuera del catalogo. Catalogo valido:
+               tipo:bug, tipo:feature, tipo:mejora, tipo:docs,
+               area:gameplay, area:render, area:ui, area:controles, area:ci,
+               prioridad:alta, prioridad:media, prioridad:baja,
+               complejidad:baja, complejidad:media, complejidad:alta.
+               Si el issue es demasiado ambiguo para clasificarlo, anade tambien la label `question`.
+            4. Publica el diagnostico como comentario, EN ESPANOL, con exactamente esta estructura:
+
+            ```markdown
+            ## 🔍 Diagnóstico automático
+
+            **Resumen:** <1-2 frases de qué pide o reporta el issue>
+
+            **Clasificación:** tipo:X · area:Y · prioridad:Z · complejidad:W
+
+            **Código implicado**
+            - `game.js:123` — `nombreFuncion()` — por qué importa
+
+            **Causa probable / punto de cambio**
+            <para bugs: la causa raíz; para features: dónde encaja en la arquitectura actual>
+
+            **Plan de implementación propuesto**
+            1. …
+            2. …
+
+            **Criterios de aceptación**
+            - [ ] …
+
+            **Riesgos / invariantes a respetar**
+            <los que apliquen de CLAUDE.md>
+
+            **Información faltante**
+            <lo que falte, o "ninguna">
+            ```
+
+            5. Si YA existe un comentario tuyo previo que empieza por `## 🔍 Diagnóstico automático`
+               (mira el campo `comments` del paso 1), ACTUALIZALO con
+               `gh issue comment ${{ github.event.issue.number }} --edit-last --body-file <archivo>`
+               en lugar de acumular comentarios. Si no existe, crea uno nuevo con
+               `gh issue comment ${{ github.event.issue.number }} --body-file <archivo>`.
+               Escribe el cuerpo a un archivo temporal para evitar problemas de escapado.
+
+            ## Invariantes del proyecto que debes tener en cuenta al diagnosticar
+
+            - Todo el estado son globals `let` a nivel de modulo (`board`, `current`, `next`, `score`, ...).
+              Las soluciones deben mantener ese estilo: nada de clases ni modulos ES.
+            - `game.js` es un `<script>` clasico al final de `<body>`; las refs al DOM se resuelven al cargar.
+            - `board` es ROWS x COLS con `0` = vacio y `1-7` = tipo de pieza E indice en `COLORS`/`PIECES`.
+              Ese doble significado es load-bearing (`merge()` y `drawBlock()` dependen de el).
+            - `collide(shape, ox, oy)` es la unica fuente de verdad de legalidad: movimiento, rotacion,
+              proyeccion del ghost y game-over pasan por ahi.
+            - Rotacion = transpose+reverse (`rotateCW`), con wall kicks en offsets [0,-1,1,-2,2] dentro de `tryRotate`.
+            - Los tamanos de canvas estan hardcodeados en `index.html` y deben seguir sincronizados con `game.js`:
+              `#board` = COLS*BLOCK x ROWS*BLOCK (300x600) y `#next-canvas` = 120x120 (grid fijo 4x4 a 30px).
+            - `clearLines` hace splice y compensa con `r++` dentro de un bucle descendente: es necesario.
+            - `endGame()` llama a `cancelAnimationFrame`, pero si se dispara desde `loop` el frame actual
+              termina y se re-encola: hay que guardar con `gameOver`.
+            - Los textos de UI y el README estan en espanol.
+
+            ## Reglas
+
+            - NO modifiques codigo, NO hagas commits, NO abras PRs.
+            - NO edites el titulo ni el cuerpo del issue (solo labels y comentario).
+            - Se concreto y accionable: este diagnostico es el insumo para implementar la solucion despues.
